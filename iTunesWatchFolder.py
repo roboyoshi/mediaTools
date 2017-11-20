@@ -65,6 +65,7 @@ def backupLibraryDB(xmlPath):
 
 
 def getTracksFromiTunesXML(xmlPath):
+	print("[Info]: Fetching all Tracks from iTunes Library..")
 	"""
 	Extract Track Paths from iTunes XML
 	:param xmlPath: Path to your iTunes Library XML (Plist) file
@@ -97,9 +98,14 @@ def getTracksFromFolder(dirPath, ext=('mp3', 'm4a')):
 	return tracks
 
 def filterTracksForImport(dirTracks, libTracks):
+	"""
+	Match 2 Lists and check what Files are not in iTunes
+	:param dirTracks, libTracks: Python Lists - Folder and iTunes
+	:return list: sorted list with all missing tracks
+	"""
 	newTracks = list(set(dirTracks) - set(libTracks))
 	if(debug): print("[Debug]: New Tracks in Folder = %i" % len(newTracks))
-	return newTracks
+	return sorted(newTracks)
 
 def importTracksToiTunes(newTracks):
 	print("[Info]: Adding new Tracks to iTunes.")
