@@ -7,19 +7,41 @@
 	Written by u/RoboYoshi
 """
 
+"""
+ToDo:
+	+ Thread for xmlQuery
+	+ Thread for FolderSearch
+	+ try/catch in case file not exists on backup create
+
+"""
+
+import sys, time, itertools, threading
 import os, subprocess, re, plistlib, datetime, shutil
-from urllib.parse import unquote
-from urllib.parse import urlparse
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 from pprint import pprint as pp
 
-debug = True
+debug = False
 backup = True
 addnew = True
 rmdead = True
 
-musicFolder = "/Volumes/audio/Library/artists" # define path to your music here
+# If used in Application Context
+if(debug): print("[Debug]\t sys.argv = ", sys.argv)
+if(len(sys.argv))==2:
+	musicFolder = sys.argv[1]
+else:
+	musicFolder = "/Volumes/audio/Library/artists" # define default path to your music here
+
 allowedExtensions=('mp3', 'm4a', 'm4b') # can be extended to your liking
+
+def loadingAnimation():
+	for c in itertools.cycle(['|', '/', '-', '\\']):
+		if done:
+			break
+		sys.stdout.write('\rloading ' + c)
+		sys.stdout.flush()
+		time.sleep(0.1)
+	sys.stdout.write('\rDone!')
 
 def mkdir_p(path):
 	try:
@@ -44,14 +66,14 @@ def getiTunesXMLPath():
 	if(xmlMatch):
 		xmlPath = xmlMatch.group(1).replace("file://","")
 		xmlPath = unquote(xmlPath)
-		if(debug): print("[Debug]: xmlPath = %s" % xmlPath)
+		if(debug): print("[Debug]\t xmlPath = %s" % xmlPath)
 		return xmlPath
 	else:
 		print("[Error] Could not get XML Path from defaults. Are you sharing your XML in iTunes -> Settings -> Advanced?")
 		return 1
 
 def backupLibraryDB(xmlPath):
-	print("[Info]: Create Backup of iTunes Library DB.")
+	print("[Info]\t Create Backup of iTunes Library DB.")
 	backupFiles = ['iTunes Library Extras.itdb', 'iTunes Library Genius.itdb', 'iTunes Library.itl', 'iTunes Library.xml', 'iTunes Music Library.xml']
 	libPath = os.path.dirname(xmlPath)
 	timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
@@ -60,42 +82,47 @@ def backupLibraryDB(xmlPath):
 	for libFile in backupFiles:
 		libFilePath = os.path.join(libPath, libFile)
 		bakFilePath = os.path.join(backupFolder, libFile)
-		shutil.copy(libFilePath, bakFilePath)
-	if(debug): print("[Debug]: Created a Backup of your iTunes Library in %s" % backupFolder)
+		try:
+			shutil.copy(libFilePath, bakFilePath)
+		except:
+			if(debug): print("[Debug]\t libFile Missing: %s" % libFile)
+			pass
+	if(debug): print("[Debug]\t Created a Backup of your iTunes Library in %s" % backupFolder)
 
 
 def getTracksFromiTunesXML(xmlPath):
-	print("[Info]: Fetching all Tracks from iTunes Library..")
 	"""
 	Extract Track Paths from iTunes XML
 	:param xmlPath: Path to your iTunes Library XML (Plist) file
 	:return list: List with all Tracks
 	"""
 	# Thanks to https://github.com/liamks/libpytunes for some pointers
-	tracks = []
+	print("[Info]\t Fetching all Tracks from iTunes Library..")
+	libTracks = [] # RAW POSIX PATH PLS
 	library = plistlib.readPlist(xmlPath)
 	for trackid, attributes in library['Tracks'].items():
 		if attributes.get('Location'):
 			location = unquote(urlparse(attributes.get('Location')).path)
-			tracks.append(location)
-	if(debug): print("[Debug]: Tracks in iTunes = %i" % len(tracks))
-	return tracks
+			if(debug): print("[Debug]\t Track Path in iTunes = %s" % location)
+			libTracks.append(location)
+	print("[Info]\t Tracks in iTunes = %i" % len(libTracks))
+	return libTracks
 
 def getTracksFromFolder(dirPath, ext=('mp3', 'm4a')):
-	print("[Info]: Search for Files in Folder with allowed Extensions..")
-	print("[Info]: .... This might take a while ....")
-	tracks = []
+	print("[Info]\t Search for Files in Folder with allowed Extensions..")
+	print("[Info]\t .... This might take a while ....")
+	dirTracks = [] # RAW POSIX PATH PLS
 	count = 0
 	for root, dirs, files in os.walk(dirPath):
 		for name in files:
 			if(name.lower().endswith(ext)):
 				track = os.path.join(root, name)
-				tracks.append(track)
+				dirTracks.append(track)
 				count+=1
 				if count % 500 == 0:
 					if(debug): print("[Debug]: Found %s Tracks.." % count)
-	if(debug): print("[Debug]: Tracks in Folder = %i" % len(tracks))
-	return tracks
+	if(debug): print("[Debug]\t Tracks in Folder = %i" % len(dirTracks))
+	return dirTracks
 
 def filterTracksForImport(dirTracks, libTracks):
 	"""
@@ -104,21 +131,22 @@ def filterTracksForImport(dirTracks, libTracks):
 	:return list: sorted list with all missing tracks
 	"""
 	newTracks = list(set(dirTracks) - set(libTracks))
-	if(debug): print("[Debug]: New Tracks in Folder = %i" % len(newTracks))
+	if(debug): print("[Debug]\t New Tracks in Folder = %i" % len(newTracks))
 	return sorted(newTracks)
 
 def importTracksToiTunes(newTracks):
-	print("[Info]: Adding new Tracks to iTunes.")
+	print("[Info]\t Adding new Tracks to iTunes.")
 	"""
 	Import a Bunch of Tracks into iTunes
 	:param newTracks: Python List with all new Tracks
 	:return int: 0
 	"""
 	for track in newTracks:
-		if(debug): print("[Debug]: TrackPath = %s" % track)
+		if(debug): print("[Debug]\t TrackPath = %s" % track)
+		# Script Notes: Unicode is needed for files with special characters.
 		script = '''
         on run {input}
-			set trackFile to POSIX file input
+			set trackFile to POSIX file input as Unicode text
 			tell app "iTunes"
 				add trackFile to playlist 1
 			end tell
@@ -128,11 +156,11 @@ def importTracksToiTunes(newTracks):
 		p = subprocess.Popen(['/usr/bin/osascript', '-'] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		stdout, stderr = p.communicate(script.encode('UTF-8'))
 		if(debug):
-			if(stderr!= b''): print("[Debug]: AppleScript Errors = %s" % stderr)
+			if(stderr!= b''): print("[Debug]\t AppleScript Error: %s" % stderr)
 	return 0
 
 def removeDeadTracksFromiTunes():
-	print("[Info]: Removing Dead Tracks from iTunes")
+	print("[Info]\t Removing Dead Tracks from iTunes")
 	# Script thankfully taken from https://apple.stackexchange.com/a/52860/71498
 	script = '''
 	tell application "iTunes"
@@ -144,8 +172,9 @@ def removeDeadTracksFromiTunes():
 	p = subprocess.Popen(['/usr/bin/osascript', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	stdout, stderr = p.communicate(script.encode('UTF-8'))
 	if(debug):
-		if(stderr!= b''): print("[Debug]: AppleScript Errors = %s" % stderr)
+		if(stderr!= b''): print("[Debug]\t AppleScript Error: %s" % stderr)
 	return 0
+
 
 # Get iTunes XML File
 xmlPath = getiTunesXMLPath()
