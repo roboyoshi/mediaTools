@@ -7,15 +7,7 @@
 	Written by u/RoboYoshi
 """
 
-"""
-ToDo:
-	+ Thread for xmlQuery
-	+ Thread for FolderSearch
-	+ try/catch in case file not exists on backup create
-
-"""
-
-import sys, time, itertools, threading
+import sys, time, itertools, threading, queue
 import os, subprocess, re, plistlib, datetime, shutil
 from urllib.parse import quote, unquote, urlparse
 from pprint import pprint as pp
@@ -27,10 +19,11 @@ rmdead = True
 
 # If used in Application Context
 if(debug): print("[Debug]\t sys.argv = ", sys.argv)
-if(len(sys.argv))==2:
+if(len(sys.argv))>1:
 	musicFolder = sys.argv[1]
 else:
-	musicFolder = "/Volumes/audio/Library/artists" # define default path to your music here
+	print("[Warn]\t No Library given to sync with.")
+	sys.exit(1)
 
 allowedExtensions=('mp3', 'm4a', 'm4b') # can be extended to your liking
 
@@ -69,7 +62,7 @@ def getiTunesXMLPath():
 		if(debug): print("[Debug]\t xmlPath = %s" % xmlPath)
 		return xmlPath
 	else:
-		print("[Error] Could not get XML Path from defaults. Are you sharing your XML in iTunes -> Settings -> Advanced?")
+		print("[Error]\t Could not get XML Path from defaults. Are you sharing your XML in iTunes -> Settings -> Advanced?")
 		return 1
 
 def backupLibraryDB(xmlPath):
@@ -106,11 +99,11 @@ def getTracksFromiTunesXML(xmlPath):
 			if(debug): print("[Debug]\t Track Path in iTunes = %s" % location)
 			libTracks.append(location)
 	print("[Info]\t Tracks in iTunes = %i" % len(libTracks))
+	q_libTracks.put(libTracks)
 	return libTracks
 
 def getTracksFromFolder(dirPath, ext=('mp3', 'm4a')):
 	print("[Info]\t Search for Files in Folder with allowed Extensions..")
-	print("[Info]\t .... This might take a while ....")
 	dirTracks = [] # RAW POSIX PATH PLS
 	count = 0
 	for root, dirs, files in os.walk(dirPath):
@@ -121,7 +114,8 @@ def getTracksFromFolder(dirPath, ext=('mp3', 'm4a')):
 				count+=1
 				if count % 500 == 0:
 					if(debug): print("[Debug]: Found %s Tracks.." % count)
-	if(debug): print("[Debug]\t Tracks in Folder = %i" % len(dirTracks))
+	print("[Info]\t Tracks in Folder = %i" % len(dirTracks))
+	q_dirTracks.put(dirTracks)
 	return dirTracks
 
 def filterTracksForImport(dirTracks, libTracks):
@@ -182,17 +176,32 @@ xmlPath = getiTunesXMLPath()
 # Backup iTunes Library Files
 if(backup): backupLibraryDB(xmlPath)
 
-# Read all Tracks from Library
-libTracks = getTracksFromiTunesXML(xmlPath)
+# Prepare Queues to store values
+q_libTracks = queue.Queue()
+q_dirTracks = queue.Queue()
 
-# Read all Tracks from Folder
-dirTracks = getTracksFromFolder(musicFolder, ext=allowedExtensions)
+# Declare Threads
+t_libTracks = threading.Thread(target=getTracksFromiTunesXML, args=(xmlPath,))
+t_dirTracks = threading.Thread(target=getTracksFromFolder, args=(musicFolder,), kwargs={'ext' : allowedExtensions})
+
+# Start both Threads
+t_libTracks.start()
+t_dirTracks.start()
+
+# Wait until both are finished
+t_libTracks.join()
+t_dirTracks.join()
+
+# Get Arrays from Thread-Queues
+libTracks = q_libTracks.get()
+dirTracks = q_dirTracks.get()
 
 # Diff Arrays and only keep Tracks not already in Library
 newTracks = filterTracksForImport(dirTracks, libTracks)
 
-# Import Tracks into iTunes with AppleScript
-if(addnew): importTracksToiTunes(newTracks)
+if(len(newTracks) != 0):
+	# Import Tracks into iTunes with AppleScript
+	if(addnew): importTracksToiTunes(newTracks)
 
 # Remove Dead Tracks from iTunes
 if(rmdead): removeDeadTracksFromiTunes()
