@@ -31,7 +31,7 @@ def loadingAnimation():
 	for c in itertools.cycle(['|', '/', '-', '\\']):
 		if done:
 			break
-		sys.stdout.write('\rloading ' + c)
+		sys.stdout.write('\r' + c)
 		sys.stdout.flush()
 		time.sleep(0.1)
 	sys.stdout.write('\rDone!')
@@ -184,6 +184,10 @@ q_dirTracks = queue.Queue()
 t_libTracks = threading.Thread(target=getTracksFromiTunesXML, args=(xmlPath,))
 t_dirTracks = threading.Thread(target=getTracksFromFolder, args=(musicFolder,), kwargs={'ext' : allowedExtensions})
 
+done = False
+t_loading = threading.Thread(target=loadingAnimation)
+t_loading.start()
+
 # Start both Threads
 t_libTracks.start()
 t_dirTracks.start()
@@ -192,6 +196,7 @@ t_dirTracks.start()
 t_libTracks.join()
 t_dirTracks.join()
 
+done = True
 # Get Arrays from Thread-Queues
 libTracks = q_libTracks.get()
 dirTracks = q_dirTracks.get()
@@ -201,7 +206,13 @@ newTracks = filterTracksForImport(dirTracks, libTracks)
 
 if(len(newTracks) != 0):
 	# Import Tracks into iTunes with AppleScript
-	if(addnew): importTracksToiTunes(newTracks)
+	if(addnew):
+		done = False
+		t_loading = threading.Thread(target=loadingAnimation)
+		t_loading.start()
+		importTracksToiTunes(newTracks)
+		done = True
+else: print("[Info]\t No New Tracks.")
 
 # Remove Dead Tracks from iTunes
 if(rmdead): removeDeadTracksFromiTunes()
