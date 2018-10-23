@@ -20,8 +20,13 @@ if platform.system() == 'Darwin':
 	AUDIO_LIB='/Volumes/rxd01/audio/library'
 else:
 	AUDIO_LIB='/mnt/rxd01/audio/library'
-
 AUDIO_DIR_ARTISTS = AUDIO_LIB + '/artists'
+
+# + -------------------------------------------------------------------
+# | Excluded Files and Directories
+# |
+# + -------------------------------------------------------------------
+EXCLUDES = ['.DS_Store', 'Artwork']
 
 # + -------------------------------------------------------------------
 # | Album Base Name: Artist - Year - Album (Edition)
@@ -119,8 +124,7 @@ def validate_artist(artistPath):
 # | 	CD1 / ALBUMARTIST - ALBUM.cue
 # |
 # + -------------------------------------------------------------------
-
-def validate_album(albumPath):
+def validate_album_contents(albumPath):
 	root = os.listdir(albumPath)
 	if root == []:
 		print("! - Album is empty")
@@ -129,13 +133,17 @@ def validate_album(albumPath):
 	count = len([element for element in discs if element is not None])
 	if(count > 1):
 		for element in root:
-			if (re.match(multiDiscPattern, element)):
-				validate_album(os.path.join(albumPath, element))
+			if (re.match(PATTERN_ALBUM_MULTIDISC, element)):
+				validate_album_contents(os.path.join(albumPath, element))
 	else:
 		return True
-		
 
-
+# + -------------------------------------------------------------------
+# | Validate Album Name
+# |
+# | Matches encountered folders that are expected to be albums
+# | against the defined pattern.
+# + -------------------------------------------------------------------
 def validate_album_name(albumFolder):
 	return re.match(PATTERN_ALBUM, albumFolder)
 
@@ -146,15 +154,14 @@ def validate_album_name(albumFolder):
 def validate_artist_section(sectionPath):
 	good=[]
 	bad=[]
-	excludes=['.DS_Store', 'Artwork']
 	for artist in sorted(os.listdir(sectionPath)):
 		artistPath = os.path.join(sectionPath, artist)
 		for album in sorted(os.listdir(artistPath)):
 			albumPath = os.path.join(artistPath, album)
-			if album in excludes:
+			if album in EXCLUDES:
 				continue
-			valid = validateAlbumFolder(albumPath)
-			name_ok = validateAlbumFolderName(album)
+			content_ok = validate_album_contents(albumPath)
+			name_ok = validate_album_name(album)
 			if (name_ok):
 				good.append(album)
 			else:
@@ -171,6 +178,6 @@ def validate_artist_section(sectionPath):
 # |
 # + -------------------------------------------------------------------
 if __name__ == "__main__":
-	validateArtistSection(AUDIO_DIR_ARTISTS)
+	validate_artist_section(AUDIO_DIR_ARTISTS)
 
 # EOF
