@@ -93,6 +93,17 @@ PATTERN_AFILE = PATTERN_AFILE_TRACKNAME + PATTERN_AFILE_EXTENSION
 PATTERN_ALBUM_MULTIDISC = '^((CD|Disc) ?[0-9]+)$'
 
 
+# Terminal Color Codes
+CRED = '\033[91m'
+CGRE = '\033[92m'
+CEND = '\033[0m'
+
+# Counters
+ARTISTS_TOTAL = 0
+ARTISTS_RIGHT = 0
+ALBUMS_TOTAL = 0
+ALBUMS_RIGHT = 0
+
 # + -------------------------------------------------------------------
 # | Artist Folder Contents:
 # |
@@ -127,7 +138,7 @@ def validate_artist(artistPath):
 def validate_album_contents(albumPath):
 	root = os.listdir(albumPath)
 	if root == []:
-		print("! - Album is empty")
+		# album is empty
 		return False
 	discs = [re.match(PATTERN_ALBUM_MULTIDISC, element) for element in root]
 	count = len([element for element in discs if element is not None])
@@ -136,6 +147,7 @@ def validate_album_contents(albumPath):
 			if (re.match(PATTERN_ALBUM_MULTIDISC, element)):
 				validate_album_contents(os.path.join(albumPath, element))
 	else:
+		# TODO: Validate disc contents
 		return True
 
 # + -------------------------------------------------------------------
@@ -152,26 +164,36 @@ def validate_album_name(albumFolder):
 # |
 # + -------------------------------------------------------------------
 def validate_artist_section(sectionPath):
-	good=[]
-	bad=[]
+	global ARTISTS_TOTAL, ARTISTS_RIGHT, ALBUMS_TOTAL, ALBUMS_RIGHT
 	for artist in sorted(os.listdir(sectionPath)):
+		ARTISTS_TOTAL += 1
 		artistPath = os.path.join(sectionPath, artist)
+		good=[]
+		bad=[]
 		for album in sorted(os.listdir(artistPath)):
 			albumPath = os.path.join(artistPath, album)
 			if album in EXCLUDES:
 				continue
+			ALBUMS_TOTAL += 1
 			content_ok = validate_album_contents(albumPath)
 			name_ok = validate_album_name(album)
 			if (name_ok):
 				good.append(album)
+				ALBUMS_RIGHT += 1
 			else:
 				bad.append(album)
-	print('Total Bad: ', len(bad))
-	pp(bad)
-	print('-----------------------')
-	print('Total Good: ', len(good))
-	pp(good)
+		if len(bad) == 0:
+			print(CGRE, artist, '✔︎', CEND)
+			ARTISTS_RIGHT += 1
+		else:
+			print(CRED, artist, '✘', CEND)
+	print_statistics()
 
+def print_statistics():
+	print("Artists Total: " + str(ARTISTS_TOTAL))
+	print("Artists Right: " + str(ARTISTS_RIGHT))
+	print("Albums Total: " + str(ALBUMS_TOTAL))
+	print("Albums Right: " + str(ALBUMS_RIGHT))
 
 # + -------------------------------------------------------------------
 # | Main Function - Script Entrypoint
